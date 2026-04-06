@@ -9,6 +9,8 @@ dotenv.load_dotenv()  # Load environment variables from .env file
 
 from routes.auth_routes import router as auth_router
 from routes.research_generator_routes import router as research_router  
+from routes.chat_routes import router as chat_router
+from routes.profile_routes import router as profile_router
 
 setup_logging()
 
@@ -37,3 +39,5 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(research_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
+app.include_router(profile_router, prefix="/api")

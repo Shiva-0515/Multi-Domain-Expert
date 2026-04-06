@@ -89,8 +89,15 @@ export default function SignupPage() {
       await signup({ fullName: form.fullName.trim(), email: form.email, password: form.password })
       navigate('/analyze', { replace: true })
     } catch (err) {
-      setApiError(err.message || 'Signup failed. Please try again.')
-    } finally {
+  const errorMessage =
+    err.response?.data?.detail ||
+    (err.request
+      ? "Cannot reach server. Please check your connection."
+      : err.message) ||
+    "Signup failed. Please try again."
+
+  setApiError(errorMessage)
+} finally {
       setSubmitting(false)
     }
   }

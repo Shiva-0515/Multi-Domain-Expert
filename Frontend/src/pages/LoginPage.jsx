@@ -49,19 +49,34 @@ export default function LoginPage() {
     setApiError('')
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    try {
-  console.log("Before login")
-  await login({ email: form.email, password: form.password })
-  console.log("Login successful")
-  navigate(from, { replace: true })
-} catch (err) {
-  console.log("Login failed:", err)
-  setApiError(err.message || 'Login failed. Please try again.')
-}
+const handleSubmit = async (e) => {
+  e.preventDefault()
+  
+  const validationErrors = validate()
 
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors)
+    return
   }
+
+  setSubmitting(true)
+  setSubmitting(true)
+
+  try {
+    await login({ email: form.email, password: form.password })
+    navigate(from, { replace: true })
+  } catch (err) {
+    const errorMessage =
+      err.response?.data?.detail ||
+      (err.request
+        ? "Cannot reach server. Check your connection."
+        : err.message)
+
+    setApiError(errorMessage)
+  } finally {
+    setSubmitting(false)
+  }
+}
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex">
@@ -241,10 +256,6 @@ export default function LoginPage() {
                 </>
               ) : 'Sign in'}
             </button>
-            <div className='text-center'>
-                <label className="w-full mt-2 text-xs text-ink-muted">Don't have an account? <button className="text-accent hover:text-accent-mid transition-colors" 
-            onClick={() => navigate('/signup')}>Sign up</button></label>
-            </div>
           </form>
 
           <p className="mt-6 text-center text-xs text-ink-muted/60">

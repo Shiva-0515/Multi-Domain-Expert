@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, Depends, Response, Request
+from fastapi import APIRouter, Depends, Response, Request,HTTPException, status
 from fastapi.responses import RedirectResponse
 from schemas.user_schema import UserSignup, UserLogin
 from services.auth_service import signup_user, login_user
@@ -17,20 +17,44 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/signup")
 def signup(user: UserSignup):
-    return signup_user(user)
+    try:
+        return signup_user(user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e) or "Signup failed"
+        )
 
 
 @router.post("/login")
 def login(user: UserLogin, response: Response):
-    token = login_user(user)
+    try:
+        token = login_user(user)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
 
+    #for production with secure cookies:
+
+    # response.set_cookie(
+    #     key="JWTtoken",
+    #     value=token,
+    #     httponly=True,
+    #     secure=True,
+    #     samesite="none"
+    # )
+
+
+    # for localhost testing, we need secure=False and samesite="lax"
     response.set_cookie(
-        key="JWTtoken",
-        value=token,
-        httponly=True,
-        secure=False,
-        samesite="lax"
-    )
+    key="JWTtoken",
+    value=token,
+    httponly=True,
+    secure=False,        
+    samesite="lax"      
+)
 
     return {"message": "Login successful"}
 
@@ -44,8 +68,12 @@ def logout(response: Response):
 @router.get("/me")
 def get_me(request: Request):
     token = request.cookies.get("JWTtoken")
+
     if not token:
-        return {"authenticated": False}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token missing"
+        )
 
     try:
         payload = decode_token(token)
@@ -53,16 +81,28 @@ def get_me(request: Request):
 
         db_user = get_user_by_id(userID)
 
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
         return {
             "authenticated": True,
             "user": {
                 "id": str(db_user["_id"]),
                 "name": db_user.get("name"),
                 "email": db_user.get("email"),
+                "photo": db_user.get("photo"),
+                "oauth": db_user.get("oauth", False)
             }
         }
-    except:
-        return {"authenticated": False}
+
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
 
 # -------- GOOGLE OAUTH -------- #
 
@@ -74,37 +114,50 @@ async def google_login(request: Request):
 
 @router.get("/google/callback")
 async def google_callback(request: Request):
-    token = await oauth.google.authorize_access_token(request)
-    user_info = token.get("userinfo")
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo")
 
-    email = user_info["email"]
-    name = user_info["name"]
+        if not user_info:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to fetch user info from Google"
+            )
 
-    db_user = get_user_by_email(email)
+        email = user_info["email"]
+        name = user_info["name"]
 
-    if not db_user:
-        result = create_user({
-            "name": name,
-            "email": email,
-            "password": None,
-            "oauth": True
-        })
-        user_id = str(result.inserted_id)
-    else:
-        user_id = str(db_user["_id"])
+        db_user = get_user_by_email(email)
 
-    access_token = create_access_token({"sub": user_id})
+        if not db_user:
+            result = create_user({
+                "name": name,
+                "email": email,
+                "password": None,
+                "oauth": True
+            })
+            user_id = str(result.inserted_id)
+        else:
+            user_id = str(db_user["_id"])
 
-    client_url = os.getenv("CLIENT_URL", "http://localhost:5173")   
+        access_token = create_access_token({"sub": user_id})
 
-    response = RedirectResponse(url=f"{client_url}/analyze")
+        client_url = os.getenv("CLIENT_URL", "http://localhost:5173")
 
-    response.set_cookie(
-        key="JWTtoken",
-        value=access_token,
-        httponly=True,
-        secure=False,
-        samesite="lax"
-    )
+        response = RedirectResponse(url=f"{client_url}/analyze")
 
-    return response
+        response.set_cookie(
+            key="JWTtoken",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="none"
+        )
+
+        return response
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Google authentication failed"
+        )

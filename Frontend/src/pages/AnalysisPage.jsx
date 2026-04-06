@@ -1,92 +1,111 @@
 import { useState } from 'react'
 import QueryForm from '../components/QueryForm.jsx'
 import MarkdownViewer from '../components/MarkdownViewer.jsx'
+import ResearchChat from '../components/ResearchChat.jsx'
 import api from '../services/api.js'
+import toast from "react-hot-toast"
+
 
 export default function AnalysisPage() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [chatOpen, setChatOpen] = useState(false)
+
   const hasOutput = loading || result
+  const mode = !hasOutput ? 'form-only' : chatOpen ? 'chat' : 'form-report'
 
   const handleSubmit = async ({ expertId, query }) => {
     setLoading(true)
     setError(null)
     setResult(null)
-try {
-  const { data } = await api.post(
-    "/research/generate",
-    {
-      expert_id: expertId,
-      query
-    }
-  )
+    setChatOpen(false)
+
+    try {
+  const promise = api.post("/research/generate", {
+    expert_id: expertId,
+    query
+  })
+
+  toast.promise(promise, {
+    loading: "Generating report...",
+    success: "Report generated successfully 🎉",
+    error: (err) =>
+      err.response?.data?.detail ||
+      "Failed to generate report",
+  })
+
+  const { data } = await promise
+
   if (data.report_markdown?.startsWith('```')) {
-  data.report_markdown = data.report_markdown
-    .replace(/^```[a-z]*\n?/i, '')
-    .replace(/```$/, '')
-}
+    data.report_markdown = data.report_markdown
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/```$/, '')
+  }
 
   setResult(data)
-  console.log("markdown result:", data.report_markdown)
 
 } catch (err) {
-  setError(
+  const errorMessage =
     err.response?.data?.detail ||
     err.message ||
-    'Something went wrong. Please try again.'
-  )
+    "Something went wrong. Please try again."
+
+  setError(errorMessage)
+
+} finally {
+  setLoading(false)
 }
- finally {
-      setLoading(false)
-    }
   }
 
   const handleReset = () => {
     setResult(null)
     setError(null)
+    setChatOpen(false)
   }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex flex-col">
 
-      {/* Page header */}
+      {/* Header */}
       <div className="border-b border-paper-border bg-paper-warm/60 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="font-display text-xl font-semibold text-ink">Analysis Workspace</h1>
+            <h1 className="font-display text-xl font-semibold text-ink">
+              Analysis Workspace
+            </h1>
             <p className="text-ink-muted text-xs mt-0.5">
-              {hasOutput ? 'Your report is ready — scroll to explore' : 'Choose an expert and describe your situation'}
+              {mode === 'chat'
+                ? 'Chatting with your report'
+                : hasOutput
+                ? 'Your report is ready — scroll to explore'
+                : 'Choose an expert and describe your situation'}
             </p>
           </div>
+
           {hasOutput && (
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink border border-paper-border hover:border-ink/20 px-3 py-2 rounded-lg transition-all"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
               New analysis
             </button>
           )}
         </div>
       </div>
 
-      {/* Main split layout */}
+      {/* Main Layout */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
-        {/* ── Left panel: Form ──
-            Width transitions: full → 35% when output appears */}
+        {/* LEFT: FORM */}
         <div
           className={`
             flex flex-col border-b lg:border-b-0 lg:border-r border-paper-border
             bg-paper-warm/30 overflow-y-auto
             transition-all duration-500 ease-in-out
-            ${hasOutput
-              ? 'lg:w-[35%] lg:min-w-[280px]'
-              : 'lg:w-full'
-            }
+            ${mode === 'form-only' ? 'lg:w-full' : ''}
+            ${mode === 'form-report' ? 'lg:w-[35%]' : ''}
+            ${mode === 'chat' ? 'lg:w-0 opacity-0 pointer-events-none overflow-hidden' : ''}
           `}
         >
           <div className={`p-6 flex-1 ${!hasOutput ? 'max-w-2xl mx-auto w-full' : ''}`}>
@@ -96,46 +115,71 @@ try {
               compact={hasOutput}
             />
 
-            {/* Error */}
             {error && (
-              <div className="mt-4 animate-fade-in">
-                <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
-                  <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <p className="text-xs font-semibold text-red-700">Request failed</p>
-                    <p className="text-xs text-red-600 mt-0.5">{error}</p>
-                  </div>
+              <div className="mt-4">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-600">
+                  {error}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* ── Right panel: Output ──
-            Hidden until output appears, then 65% */}
+        {/* CENTER: REPORT */}
         {hasOutput && (
-          <div className="flex-1 lg:w-[65%] overflow-y-auto animate-slide-in-right">
-            <div className="p-6 h-full">
-              <MarkdownViewer result={result} loading={loading} />
+          <div
+            className={`
+              flex flex-col overflow-hidden transition-all duration-500
+              ${mode === 'form-report' ? 'flex-1' : ''}
+              ${mode === 'chat' ? 'lg:w-[45%]' : ''}
+            `}
+          >
+            {/* Back bar in chat mode */}
+            {mode === 'chat' && (
+              <div className="px-4 py-2 bg-paper-warm border-b border-paper-border">
+                <button
+                  onClick={() => setChatOpen(false)}
+                  className="text-xs text-ink-muted hover:text-ink"
+                >
+                  ← Back to report
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <MarkdownViewer
+                result={result}
+                loading={loading}
+                onOpenChat={() => setChatOpen(true)}
+                chatOpen={chatOpen}
+              />
             </div>
           </div>
         )}
 
-        {/* ── Empty state (no output yet, full width) ── */}
+        {/* RIGHT: CHAT PANEL */}
+        {mode === 'chat' && (
+          <div className="lg:w-[55%] border-l border-paper-border flex flex-col animate-slide-in-right h-full">
+  
+            <div className="flex-1 overflow-hidden flex">
+              <ResearchChat
+                reportContext={result?.report_markdown || ''}
+                onClose={() => setChatOpen(false)}
+                className="flex-1"
+              />
+            </div>
+
+          </div>
+        )}
+
+        {/* EMPTY STATE */}
         {!hasOutput && (
           <div className="hidden lg:flex flex-col items-center justify-center flex-1 text-center px-12 opacity-70">
-            <div className="w-50 h-20 rounded-full bg-paper-border flex items-center justify-center mb-6">
-              <svg className="w-8 h-8 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <p className="font-display text-2xl font-semibold text-ink-muted mb-2">Your report will appear here</p>
-            <p className="text-ink-muted text-sm max-w-xs">Fill in the form on the left and click Generate to produce a structured expert report.</p>
+            <p className="text-xl text-ink-muted">
+              Your report will appear here
+            </p>
           </div>
         )}
-
       </div>
     </div>
   )
